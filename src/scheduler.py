@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 
 from src.config import config
-from src.main import update_fonbet_stats
+from src.fonbet_stats_updater import FonbetStatsUpdater
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,8 +31,9 @@ class StatisticsScheduler:
         logger.info(f"Запуск обновления статистики в {datetime.now()}")
         
         try:
-            update_fonbet_stats()
-            logger.info("Обновление статистики завершено успешно")
+            updater = FonbetStatsUpdater()
+            result = updater.update_monthly_stats()
+            logger.info(f"Обновление статистики завершено успешно: {result['sheet_name']}")
         except Exception as e:
             logger.error(f"Ошибка при обновлении статистики: {e}", exc_info=True)
     

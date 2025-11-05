@@ -116,11 +116,61 @@ class AppsFlyerClient:
             logger.error(f"Ошибка при парсинге CSV: {e}")
             raise
     
+    def get_aggregate_report(
+        self,
+        app_id: str,
+        from_date: datetime,
+        to_date: datetime
+    ) -> List[Dict[str, str]]:
+        """
+        Получение агрегированного отчета (обходит лимит Raw Data)
+        
+        Args:
+            app_id: ID приложения
+            from_date: Дата начала
+            to_date: Дата окончания
+            
+        Returns:
+            Список событий из агрегированного отчета
+        """
+        # Aggregate API для получения данных по партнерам
+        url = f"https://hq1.appsflyer.com/api/agg-data/export/app/{app_id}/partners_by_date_report/v5"
+        
+        params = {
+            "from": from_date.strftime("%Y-%m-%d"),
+            "to": to_date.strftime("%Y-%m-%d"),
+            "timezone": "UTC"
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        
+        logger.info(f"Запрос агрегированных данных для {app_id}, период {from_date.date()} - {to_date.date()}")
+        
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=300)
+            response.raise_for_status()
+            
+            csv_content = response.text
+            if csv_content.startswith('\ufeff'):
+                csv_content = csv_content[1:]
+            csv_reader = csv.DictReader(io.StringIO(csv_content))
+            data = list(csv_reader)
+            
+            logger.info(f"Получено {len(data)} записей из Aggregate API")
+            return data
+            
+        except Exception as e:
+            logger.error(f"Ошибка Aggregate API: {e}")
+            raise
+    
     def get_monthly_report(
         self, 
         app_id: str, 
         year: Optional[int] = None, 
-        month: Optional[int] = None
+        month: Optional[int] = None,
+        use_aggregate: bool = False
     ) -> List[Dict[str, str]]:
         """
         Получение отчета за весь месяц (с 1-го числа до вчерашнего дня)
@@ -129,6 +179,7 @@ class AppsFlyerClient:
             app_id: ID приложения
             year: Год (если не указан, берется текущий)
             month: Месяц (если не указан, берется текущий)
+            use_aggregate: Использовать Aggregate API (обходит лимит)
             
         Returns:
             Список словарей с данными событий
@@ -151,12 +202,23 @@ class AppsFlyerClient:
             else:
                 to_date = datetime(year, month + 1, 1) - timedelta(days=1)
         
-        return self.get_in_app_events_report(app_id, from_date, to_date)
+        # Пробуем Raw Data API, если не получилось - Aggregate
+        if use_aggregate:
+            return self.get_aggregate_report(app_id, from_date, to_date)
+        
+        try:
+            return self.get_in_app_events_report(app_id, from_date, to_date)
+        except requests.exceptions.HTTPError as e:
+            if '400' in str(e) or 'maximum number' in str(e).lower():
+                logger.warning("Лимит Raw Data достигнут, используем Aggregate API")
+                return self.get_aggregate_report(app_id, from_date, to_date)
+            raise
     
     def get_reports_for_all_apps(
         self, 
         year: Optional[int] = None, 
-        month: Optional[int] = None
+        month: Optional[int] = None,
+        use_aggregate: bool = True
     ) -> Dict[str, List[Dict[str, str]]]:
         """
         Получение отчетов для всех приложений
@@ -164,6 +226,7 @@ class AppsFlyerClient:
         Args:
             year: Год
             month: Месяц
+            use_aggregate: Использовать Aggregate API (обходит лимит)
             
         Returns:
             Словарь {app_id: [события]}
@@ -173,7 +236,7 @@ class AppsFlyerClient:
         
         for app_id in app_ids:
             try:
-                data = self.get_monthly_report(app_id, year, month)
+                data = self.get_monthly_report(app_id, year, month, use_aggregate=use_aggregate)
                 results[app_id] = data
             except Exception as e:
                 logger.error(f"Ошибка при получении данных для {app_id}: {e}")
