@@ -106,21 +106,28 @@ class FonbetStatsUpdater:
         # Создаем отдельный лист для AppsFlyer статистики
         return f"AF_Stats_{month_name}{year_short}"
     
-    def load_spend_data(self, sheet_name: Optional[str] = None) -> Dict[Tuple[str, Optional[str]], float]:
+    def load_spend_data(self, year: Optional[int] = None, month: Optional[int] = None, sheet_name: Optional[str] = None) -> Dict[Tuple[str, Optional[str]], float]:
         """
         Загрузка данных о расходах из существующего листа
         
         Args:
-            sheet_name: Название листа (если None, пытается найти автоматически)
+            year: Год для поиска листа
+            month: Месяц для поиска листа
+            sheet_name: Название листа (если None, пытается найти по году/месяцу)
             
         Returns:
             Словарь {(source, platform): spend}
         """
+        # Если указан year и month, ищем лист по месяцу
+        if sheet_name is None and year is not None and month is not None:
+            sheet_name = self.sheet_reader.find_sheet_by_month(year, month)
+        
+        # Если все еще нет названия, пробуем найти автоматически
         if sheet_name is None:
             sheet_name = self.sheet_reader.find_spend_sheet()
         
         if sheet_name is None:
-            logger.warning("Не найден лист с данными о расходах")
+            logger.warning("Не найден лист с данными о расходах - будут использованы нулевые значения")
             return {}
         
         logger.info(f"Загрузка данных о расходах из листа '{sheet_name}'")
@@ -165,19 +172,18 @@ class FonbetStatsUpdater:
         grouped_data = self.analyze_campaigns(all_events)
         logger.info(f"Найдено уникальных источников: {len(grouped_data)}")
         
-        # Загружаем данные о расходах, если не переданы и требуется
-        # ВАЖНО: Только если явно указано, иначе не трогаем существующие листы
-        if spend_data is None and load_spend_from_sheet:
-            logger.info("Попытка загрузки данных о расходах из существующих листов...")
-            try:
-                spend_data = self.load_spend_data()
-                if spend_data:
-                    logger.info(f"Загружено {len(spend_data)} записей о расходах")
-                else:
-                    logger.info("Данные о расходах не найдены - будут использоваться нулевые значения")
-            except Exception as e:
-                logger.warning(f"Не удалось загрузить данные о расходах: {e}. Продолжаем без них.")
-                spend_data = {}
+        # Загружаем данные о расходах из листа соответствующего месяца (например "Октябрь25")
+        # Это позволяет сверять данные AppsFlyer с вашими ставками
+        logger.info(f"Попытка загрузки данных о расходах из листа за {year or 'текущий'}-{month or 'текущий'}...")
+        try:
+            spend_data = self.load_spend_data(year=year, month=month)
+            if spend_data:
+                logger.info(f"Загружено {len(spend_data)} записей о расходах")
+            else:
+                logger.info("Данные о расходах не найдены - будут использоваться нулевые значения")
+        except Exception as e:
+            logger.warning(f"Не удалось загрузить данные о расходах: {e}. Продолжаем с нулевыми значениями.")
+            spend_data = {}
         
         # Создаем сводную таблицу
         summary = self.campaign_analyzer.create_summary_table(

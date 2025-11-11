@@ -93,8 +93,10 @@ class CampaignAnalyzer:
         """
         grouped = defaultdict(lambda: {
             'deposits': 0,
+            'events': 0,
             'revenue': 0.0,
-            'campaigns': set()
+            'campaigns': set(),
+            'campaigns_detail': defaultdict(lambda: {'deposits': 0, 'revenue': 0.0})
         })
         
         for event in events:
@@ -113,11 +115,18 @@ class CampaignAnalyzer:
             # Подсчитываем депозиты (каждая строка = 1 депозит)
             grouped[key]['deposits'] += 1
             
+            # Подсчитываем события (каждая строка = 1 событие)
+            grouped[key]['events'] += 1
+            
             # Собираем доход (если есть)
             try:
                 revenue_str = event.get('Event Revenue') or event.get('event_revenue') or '0'
                 revenue = float(revenue_str) if revenue_str else 0.0
                 grouped[key]['revenue'] += revenue
+                
+                # Детализация по кампаниям
+                grouped[key]['campaigns_detail'][campaign]['deposits'] += 1
+                grouped[key]['campaigns_detail'][campaign]['revenue'] += revenue
             except (ValueError, TypeError):
                 pass
             
@@ -129,8 +138,16 @@ class CampaignAnalyzer:
         for key, data in grouped.items():
             result[key] = {
                 'deposits': data['deposits'],
+                'events': data['events'],
                 'revenue': round(data['revenue'], 2),
-                'campaigns': list(data['campaigns'])
+                'campaigns': list(data['campaigns']),
+                'campaigns_detail': {
+                    camp: {
+                        'deposits': details['deposits'],
+                        'revenue': round(details['revenue'], 2)
+                    }
+                    for camp, details in data['campaigns_detail'].items()
+                }
             }
         
         return result
@@ -151,6 +168,9 @@ class CampaignAnalyzer:
             Список словарей для записи в таблицу
         """
         summary = []
+        
+        # Источники для которых нужна детализация по кампаниям в iOS
+        DETAILED_SOURCES_IOS = ['mintegral_int', 'unityads_int']
         
         # Разделяем по платформам для лучшей читаемости
         ios_items = []
@@ -190,16 +210,56 @@ class CampaignAnalyzer:
             profit = revenue - spend
             roi = (profit / spend * 100) if spend > 0 else None
             
-            summary.append({
-                'Source': source_name,
-                'Platform': platform_name,
-                'Spend': spend,
-                'Revenue': revenue,
-                'Profit': profit,
-                'ROI': roi,
-                'Deposits': data['deposits'],
-                'Campaigns': len(data['campaigns'])
-            })
+            # Проверяем, нужна ли детализация по кампаниям
+            if platform == 'ios' and source in DETAILED_SOURCES_IOS:
+                # Добавляем строку с общим итогом для источника
+                summary.append({
+                    'Source': source_name,
+                    'Platform': platform_name,
+                    'Spend': spend,
+                    'Revenue': revenue,
+                    'Profit': profit,
+                    'ROI': roi,
+                    'Deposits': data['deposits'],
+                    'Events': data['events'],
+                    'Campaigns': len(data['campaigns']),
+                    'is_total': True  # Флаг для форматирования
+                })
+                
+                # Добавляем детализацию по каждой кампании
+                campaigns_detail = data.get('campaigns_detail', {})
+                # Сортируем кампании по количеству депозитов (по убыванию)
+                sorted_campaigns = sorted(
+                    campaigns_detail.items(),
+                    key=lambda x: (-x[1]['deposits'], x[0])
+                )
+                
+                for campaign_name, campaign_data in sorted_campaigns:
+                    summary.append({
+                        'Source': f"  └─ {campaign_name}",  # Отступ для визуального отделения
+                        'Platform': '',  # Пустая платформа для кампаний
+                        'Spend': 0.0,  # Spend не разбивается по кампаниям
+                        'Revenue': campaign_data['revenue'],
+                        'Profit': campaign_data['revenue'],  # Profit = Revenue для кампаний (т.к. Spend не разбивается)
+                        'ROI': None,  # ROI не считаем для отдельных кампаний
+                        'Deposits': campaign_data['deposits'],
+                        'Events': campaign_data['deposits'],  # Events = Deposits для кампаний
+                        'Campaigns': '',  # Пустое поле для кампаний
+                        'is_campaign_detail': True  # Флаг для форматирования
+                    })
+            else:
+                # Обычная строка без детализации
+                summary.append({
+                    'Source': source_name,
+                    'Platform': platform_name,
+                    'Spend': spend,
+                    'Revenue': revenue,
+                    'Profit': profit,
+                    'ROI': roi,
+                    'Deposits': data['deposits'],
+                    'Events': data['events'],
+                    'Campaigns': len(data['campaigns'])
+                })
         
         return summary
     
@@ -219,7 +279,7 @@ class CampaignAnalyzer:
             Список списков для записи в Google Sheets
         """
         # Заголовки
-        headers = ['Source', 'Platform', 'Spend $', 'Revenue $', 'Profit $', 'ROI %', 'Deposits', 'Campaigns']
+        headers = ['Source', 'Platform', 'Spend ₽', 'Revenue $', 'Profit $', 'ROI %', 'Deposits', 'Events', 'Campaigns']
         rows = [headers]
         
         # Данные
@@ -235,39 +295,48 @@ class CampaignAnalyzer:
             roi = item['ROI']
             
             # Форматируем ROI
-            roi_str = f"{roi:.2f}%" if roi is not None else "#DIV/0!"
+            roi_str = f"{roi:.2f}%" if roi is not None else ""
+            
+            # Проверяем, это детализация кампании или обычная строка
+            is_campaign_detail = item.get('is_campaign_detail', False)
             
             row = [
                 item['Source'],
                 item['Platform'],
-                f"${spend:,.2f}".replace(',', ' '),
+                f"{spend:,.0f}".replace(',', ' ') if spend > 0 else ('0' if not is_campaign_detail else ''),
                 f"${revenue:,.2f}".replace(',', ' '),
                 f"${profit:,.2f}".replace(',', ' '),
                 roi_str,
                 item['Deposits'],
-                item['Campaigns']
+                item['Events'],
+                item['Campaigns'] if item['Campaigns'] != '' else ''
             ]
             rows.append(row)
             
-            # Суммируем для Total
-            total_spend += spend
-            total_revenue += revenue
-            total_profit += profit
-            total_deposits += item['Deposits']
+            # Суммируем для Total только основные строки (не детализацию кампаний)
+            if not is_campaign_detail:
+                total_spend += spend
+                total_revenue += revenue
+                total_profit += profit
+                total_deposits += item['Deposits']
         
         # Добавляем строку Total
         if include_total:
             total_roi = (total_profit / total_spend * 100) if total_spend > 0 else None
             total_roi_str = f"{total_roi:.2f}%" if total_roi is not None else "#DIV/0!"
             
+            # Подсчитываем общее количество событий (только для не-детализированных строк)
+            total_events = sum(item['Events'] for item in summary if not item.get('is_campaign_detail', False))
+            
             rows.append([
                 'Total',
                 '',
-                f"${total_spend:,.2f}".replace(',', ' '),
+                f"{total_spend:,.0f}".replace(',', ' ') if total_spend > 0 else '0',
                 f"${total_revenue:,.2f}".replace(',', ' '),
                 f"${total_profit:,.2f}".replace(',', ' '),
                 total_roi_str,
                 total_deposits,
+                total_events,
                 ''
             ])
         

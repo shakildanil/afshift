@@ -22,7 +22,7 @@ class Config:
     APPSFLYER_BASE_URL: str = "https://hq1.appsflyer.com/api/raw-data/export/app"
     
     # App IDs
-    FONBET_IOS_APP_ID: str = os.getenv("FONBET_IOS_APP_ID", "")
+    FONBET_IOS_APP_ID: str = os.getenv("FONBET_IOS_APP_ID", "id1166619854")
     FONBET_ANDROID_APP_ID: str = os.getenv("FONBET_ANDROID_APP_ID", "ru.bkfon-Android")
     
     # Google Sheets Configuration

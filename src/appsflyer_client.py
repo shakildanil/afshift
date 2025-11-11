@@ -218,7 +218,7 @@ class AppsFlyerClient:
         self, 
         year: Optional[int] = None, 
         month: Optional[int] = None,
-        use_aggregate: bool = True
+        use_aggregate: bool = False
     ) -> Dict[str, List[Dict[str, str]]]:
         """
         Получение отчетов для всех приложений
