@@ -139,17 +139,16 @@ class FonbetStatsUpdater:
         year: Optional[int] = None, 
         month: Optional[int] = None,
         spend_data: Optional[Dict[tuple, float]] = None,
-        test_mode: bool = False,
         load_spend_from_sheet: bool = False  # По умолчанию НЕ трогаем существующие листы
     ):
         """
         Обновление статистики за месяц
         
         Args:
-            year: Год
-            month: Месяц
+            year: Год (если None - текущий)
+            month: Месяц (если None - текущий)
             spend_data: Данные о расходах (опционально)
-            test_mode: Режим тестирования (создает лист "Тест")
+            load_spend_from_sheet: Загружать ли данные о расходах из существующего листа
         """
         # Получаем данные из AppsFlyer
         logger.info("=" * 80)
@@ -194,14 +193,11 @@ class FonbetStatsUpdater:
         # Форматируем для Google Sheets
         rows = self.campaign_analyzer.format_for_sheets(summary)
         
-        # Определяем название листа
-        if test_mode:
-            sheet_name = "AF_Stats_Тест"
-        else:
-            sheet_name = self.get_sheet_name_for_month(year, month)
+        # Определяем название листа (всегда по текущему месяцу)
+        sheet_name = self.get_sheet_name_for_month(year, month)
         
-        logger.info(f"Создание/обновление отдельного листа: {sheet_name}")
-        logger.info("ВАЖНО: Существующие листы не изменяются!")
+        logger.info(f"Создание/обновление листа за текущий месяц: {sheet_name}")
+        logger.info("ВАЖНО: Существующие листы за другие месяцы не изменяются!")
         
         # Записываем в Google Sheets (создаем новый лист, не трогаем существующие)
         self.sheets_service.write_sheet(

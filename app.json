@@ -1,0 +1,60 @@
+{
+  "name": "Fonbet Stats Updater",
+  "description": "Автоматическое обновление статистики Фонбет из AppsFlyer в Google Sheets каждое утро в 8:00 МСК (кроме воскресенья)",
+  "repository": "https://github.com/your-username/adc-afshit",
+  "keywords": [
+    "appsflyer",
+    "google-sheets",
+    "automation",
+    "statistics",
+    "fonbet"
+  ],
+  "stack": "heroku-22",
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  },
+  "env": {
+    "APPSFLYER_API_KEY": {
+      "description": "AppsFlyer API Token (V2.0) - получите в AppsFlyer Dashboard → Settings → API Access",
+      "required": true
+    },
+    "GOOGLE_SPREADSHEET_ID": {
+      "description": "ID Google Таблицы (из URL: https://docs.google.com/spreadsheets/d/[ID]/edit)",
+      "required": true
+    },
+    "GOOGLE_CLIENT_EMAIL": {
+      "description": "Email Service Account из Google Cloud Console (например: your-sa@project.iam.gserviceaccount.com)",
+      "required": true
+    },
+    "GOOGLE_PRIVATE_KEY": {
+      "description": "Private Key из JSON файла Service Account. ВАЖНО: Сохраните переносы строк как \\n",
+      "required": true
+    },
+    "FONBET_ANDROID_APP_ID": {
+      "description": "AppsFlyer Android App ID для Фонбет",
+      "value": "ru.bkfon-Android",
+      "required": false
+    },
+    "FONBET_IOS_APP_ID": {
+      "description": "AppsFlyer iOS App ID для Фонбет",
+      "value": "id1166619854",
+      "required": false
+    },
+    "MAX_DAYS_BETWEEN_INSTALL_AND_EVENT": {
+      "description": "Максимальное количество дней между установкой и событием для фильтрации",
+      "value": "30",
+      "required": false
+    }
+  },
+  "addons": []
+}
+
+
